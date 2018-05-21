@@ -15,15 +15,11 @@ class MainApp(tk.Frame):
         tk.Frame.__init__(self,parent,*args,**kwargs)
         self.parent=parent
         self.running=False
-        self.time=0
+
         self.initWidgets()
         self.SetInitialConditions()
         self.im = self.img.imshow(self.T[self.newVals,:,:], cmap=cm.hot, interpolation='nearest', origin='lower')
         self.fig.colorbar( self.im ) # Show the colorbar along the side
-        self.TempPlot,=self.TempGraph.plot(self.T[self.newVals,20,:])
-        self.TempGraph.set_ylim([0,400])
-        self.TempGraph.set_ylabel('Temperature, T, ($^\circ$ C)')
-        self.TempGraph.set_xlabel('X index, j')
         show()
 
 
@@ -33,11 +29,12 @@ class MainApp(tk.Frame):
 
     def initWidgets(self):
         self.fig = plt.figure(1)
-        self.img = subplot(111)
         self.manager=get_current_fig_manager()
-        self.img = subplot(2,1,2)
-        self.TempGraph=subplot(2,1,1)
-
+        self.img = subplot(2,1,1)
+        self.TempGraph=subplot(2,1,2)
+        x1=sp.linspace(0.0,5.0)
+        y1=sp.cos(2*sp.pi*x1)*sp.exp(-x1)
+        plt.plot(x1,y1)
 
 
 
@@ -47,12 +44,11 @@ class MainApp(tk.Frame):
         self.grid()
         self.lblPower=tk.Label(self,text="Power")
         self.lblPower.grid(row=row,column=0)
-        self.sclPower=tk.Scale(self,from_=0,to_=100,orient=tk.HORIZONTAL)
+        self.sclPower=tk.Scale(self,from_=0,to_=100000,orient=tk.HORIZONTAL)
         self.sclPower.grid(row=row,column=1,columnspan=3)
 
-        row=row+1
-        self.lblTime=tk.Label(self,text="Time={0}".format(self.time))
-        self.lblTime.grid(row=row,column=0)
+
+
 
         #lastrow
         row=row+1
@@ -74,7 +70,7 @@ class MainApp(tk.Frame):
         self.btnTwo["state"]=tk.DISABLED
 
         while self.running:
-            self.q=self.sclPower.get()/1000.0
+            self.q=self.sclPower.get()
             self.updateLoop()
             self.update()
 
@@ -86,7 +82,7 @@ class MainApp(tk.Frame):
         self.q=0.0
         while self.running:
             self.updateLoop()
-
+            self.update()
 
     def Stop(self):
         self.running=False
@@ -104,31 +100,73 @@ class MainApp(tk.Frame):
 
     def SetInitialConditions(self):
         #basic stuff, evenntuallt allow this to be modofied
-        self.dx=.5    #in mm default 50 microns
+        self.T0=25
+        self.dx=0.05    #in mm default 50 microns
+        self.zy=0.05
         self.dz=0.05    #in mm default 50 microns
-        self.kx=[7.59/50,7.63/50]    #x direction diffusiom in W/mmsk [no poly, poly]
-        self.kz=[0.19/1000,0.23/1000]   #zz direction diffusion in J/mmsk [no poly,poly]
-        self.crho=[15.28/1000,195.8/1000]  #heat capacity [graphite,poly] J/(Kmm3)
+        self.Lx=3.5*25.4
+        self.Ly=3.5*25.4
+        self.Lz=120*self.dx
+        self.nx=int(self.Lx/self.dx)
+        self.ny=int(self.Ly/self.dy)
+        self.nz=int(self.Lz/self.dz)
+
+        #create the array for temps, note old and new values alternate each step initializ at 25C
+        self.T = sp.full([2,self.nz,self.ny,self.nx],self.T0)
+
+        #set material matrix
+
+
+        #use this to create the basic property matrices
+        self.Material=sp.zeros_like(self.T[0,:,:,:],dtype=sp.bool_)
+        self.Coeffs=sp.zeros([5,self.nz,self.ny,self.nx])
+        self.k=sp.zeros([3,self.nz,self.ny,self.nx])
+        #UpdateCoeffs
+
+
+        #initiallized coefficient matrices
+
+
+
+
+        #expelicit, we will generaly use the fastest time available initially
+        self.dt=1  #seconds
+
+        #material Properties for PA12 SHC=1.2     density=1.01 mg/mm3 Volume fraction ~15.2%
+        # for Carbon SHC=072  denisty=1.79  volume fraction ~3.8%
+
+
+
+
+        self.kx=[7.6,7.65]*1000     #x direction diffusiom in J/(mmks) [no poly, poly]
+        self.kz=[.2,.3]*1000    #zz direction diffusion in J/(mmks) [no poly,poly]
+        self.crho=[015,195]  #heat capacity [graphite,poly] J/(Kmm3)
+
+
+        self.UpdateCoefficients()
+
+
+
+
+
+
 
         #self.a=0.5
-        self.q=.1
+        self.q=0
 
         #CHECK UNITS
-        self.nx=int(3.5*25.4/self.dx)
-        self.nz=int(6/self.dz)
+
         self.nt=500
 
         #precalculate some things
         self.dx2=self.dx*self.dx
         self.dz2=self.dz*self.dz
-        #maximum dt limited by stability criteria.
         self.dt=self.crho[0]*self.dx2*self.dz2/(2*(self.kx[0]*self.dz2+self.kz[0]*self.dx2))/2
-        print(self.dt)
 # Start u and ui off as zero matrices:
         self.T = sp.full([2,self.nz,self.nx],25)  #old and new values for T switch each step
         self.Coeffs=sp.full([5,self.nz,self.nx],1/self.crho[0])  #this array holds the coeffs for each volume initiall just graphite
         #polymer block is cube 20x20 in side
-        self.Coeffs[0,6:116,50:130]=1/self.crho[1]
+        self.Coeffs[0,6:116,100:800]=1/self.crho[1]
 
         self.newVals=0      #this holds the values for the current step
         self.u=sp.zeros([self.nx,self.nz])
@@ -142,26 +180,60 @@ class MainApp(tk.Frame):
         #            self.T[j,i,:] = .000001
 
                 #initial conditions
-        #verify stsabiliy
+
+
+
+
+    def UpdateCoefficients(self):
+        #this subroutine updates the coefficients uses in the calculations
+        #first the heat capacities for each cell (in J/ks)
+        self.Coeffs[0,:,:,:]=1/(self.crho[0]*(self.dx*self.dy*self.dz))  #set all to be same as grapite
+        self.Coeffs[0,100:200,100:200,10:110]=1/(self.chrho[1]*(self.dx*self.dy*self.dz)) #set a block to be value of graphite plus polymer
+        #next the diffusivities in each direction
+        self.k[2,:,:,:]=self.kx[0]
+        self.k[1,:,:,:]=self.kx[0]
+        self.k[0,:,:,:]=self.kz[0]
+        self.k[2,100:200,100:200,10:110]=self.kx[1]
+        self.k[1,100:200,100:200,10:110]=self.kx[1]
+        self.k[0,100:200,100:200,10:110]=self.kz[1]
+        #now some heavy lifting calculate harmonic means NOTE, last volume is redundant.
+        self.Coeffs[1,:-1,:,:]=(2/self.dz*self.k[0,:-1,:,:]*self.k[0,1:,:,:]/(self.k[0,:-1,:,:]+self.k[0,1:,:,:]))
+        self.Coeffs[2,:,-1,:]=(2/self.dy*self.k[1,:,:-1,:]*self.k[0,:,1:,:,]/(self.k[0,:,-1,:]+self.k[0,:,1:,:]))
+        self.Coeffs[3,:,:,-1]=(2/self.dx*self.k[0,:,:,-1,]*self.k[0,:,:,1:]/(self.k[0,:,:,-1]+self.k[0,:,:,1:]))
+
 
 
 
     def updateLoop(self):
-        for n in range(10):
-            self.UpdateFIgure()
-            self.time+=self.dt
+        #for n in range(100):
 
-            self.update()
-        self.lblTime['text']="Time={0:f}s".format(self.time)
+        self.UpdateFIgure()
+
         self.im.set_array(self.T[self.newVals,:,:])
         self.im.set_clim([0,400])
-        self.TempPlot.set_ydata(self.T[self.newVals,20,:])
-           # =self.TempGraph.plot(self.T[self.newVals,20,:])
+
         self.manager.canvas.draw()
 
 
     def UpdateFIgure(self):
         old=1-self.newVals
+        new=self.newVals
+        #first add in last temp plus effect of source term
+        self.T[new,:,:,:]=self.T[old,:,:,:]+self.q*self.Coeffs[0,:,:,:]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         xCoeff=self.dt*self.kx[0]/(self.dx2)
         zCoeff=self.dt*self.kz[0]/(self.dz2)
         #first we update the bulk elements, for all of these we use full size elements (DxDz)
@@ -181,25 +253,25 @@ class MainApp(tk.Frame):
         #up and donwn no different
         self.T[self.newVals,1:-1, 0] +=zCoeff*self.Coeffs[0,1:-1,0]*(self.T[old,2:, 0] - 2*self.T[old,1:-1, 0] + self.T[old,:-2, 0])
         self.T[self.newVals,1:-1, -1:] +=zCoeff*self.Coeffs[0,1:-1,-1:]*(self.T[old,2:, -1:] - 2*self.T[old,1:-1, -1:] + self.T[old,:-2, -1:])
-        #convetion and radiation losses are proportional to area and temp difference
-        t0=25  #extenral temp
-        ConvLoss=.01
-        self.T[self.newVals,1:-1, 0] +=xCoeff*self.Coeffs[0,1:-1,0]*(self.T[old,1:-1, 1] - self.T[old,1:-1, 0])
-        self.T[self.newVals,:, 0] +=ConvLoss*self.dt*self.Coeffs[0,:,0]*(t0-self.T[old,:, 0])
-        self.T[self.newVals,1:-1, -1:] +=xCoeff*self.Coeffs[0,1:-1,-1:]*(self.T[old,1:-1, -2:-1] - self.T[old,1:-1, -1:])
-        self.T[self.newVals,:, -1:] +=ConvLoss*self.dt*self.Coeffs[0,:,-1:]*(t0-self.T[old,:, -1:])
-
-        #Top anddd Bottom
-        #sides are  no different
-        self.T[self.newVals,0,1:-1] +=xCoeff*self.Coeffs[0,0,1:-1]*(self.T[old,0,2:] - 2*self.T[old,0,1:-1] + self.T[old,0,:-2])
-        self.T[self.newVals,-1:,1:-1 ] +=xCoeff*self.Coeffs[0,-1:,1:-1]*(self.T[old,-1:,2:] - 2*self.T[old,-1:,1:-1] + self.T[old,-1:,:-2])
         #convetion and radiation losses are propostional to area and temp difference
         t0=25  #extenral temp
-        ConvLoss=.1
+        ConvLoss=5000
+        self.T[self.newVals,1:-1, 0] +=xCoeff*self.Coeffs[0,1:-1,0]*(self.T[old,1:-1, 1] - self.T[old,1:-1, 0])
+        self.T[self.newVals,:, 0] +=-ConvLoss*self.dt*self.Coeffs[0,:,0]*(self.T[old,:, 0] -t0)
+        self.T[self.newVals,1:-1, -1:] +=xCoeff*self.Coeffs[0,1:-1,-1:]*(self.T[old,1:-1, -2:-1] - self.T[old,1:-1, -1:])
+        self.T[self.newVals,:, -1:] +=-ConvLoss*self.dt*self.Coeffs[0,:,-1:]*(self.T[old,:, -1:] -t0)
+
+        #Top anddd Bottom
+        #up and donwn no different
+        self.T[self.newVals,0,1:-1] +=zCoeff*self.Coeffs[0,0,1:-1]*(self.T[old,0,2:] - 2*self.T[old,1,1:-1] + self.T[old,0,:-2])
+        self.T[self.newVals,-1:,1:-1 ] +=zCoeff*self.Coeffs[0,-1:,1:-1]*(self.T[old,-1:,2:] - 2*self.T[old,-1:,1:-1] + self.T[old,-2:-1,1:-1])
+        #convetion and radiation losses are propostional to area and temp difference
+        t0=25  #extenral temp
+        ConvLoss=5000
         self.T[self.newVals,0,1:-1] +=zCoeff*self.Coeffs[0,0,1:-1]*(self.T[old,1,1:-1] - self.T[old,0,1:-1])
-        self.T[self.newVals,0,:] +=ConvLoss*self.dt*self.Coeffs[0,0,:]*(t0-self.T[old,0,: ])
+        self.T[self.newVals,0,:] +=-ConvLoss*self.dt*self.Coeffs[0,0,:]*(self.T[old,0,: ] -t0)
         self.T[self.newVals,-1:,1:-1] +=zCoeff*self.Coeffs[0,-1:,1:-1]*(self.T[old, -2:-1,1:-1] - self.T[old,-1:,1:-1])
-        self.T[self.newVals,-1:,:] +=ConvLoss*self.dt*self.Coeffs[0,-1:,:]*(t0-self.T[old,-1:,:])
+        self.T[self.newVals,-1:,:] +=-ConvLoss*self.dt*self.Coeffs[0,-1:,:]*(self.T[old,-1:,:] -t0)
 
         #finally the  diffusion at the corners
         self.T[self.newVals,0, 0] +=zCoeff*self.Coeffs[0,0,0]*(self.T[old,1, 0] - self.T[old,0, 0] )
