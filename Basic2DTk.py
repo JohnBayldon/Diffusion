@@ -1,4 +1,4 @@
-import Tkinter as tk
+import tkinter as tk
 import scipy as sp
 import matplotlib
 matplotlib.use('TkAgg') # Change this as desired.
